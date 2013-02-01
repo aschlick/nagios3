@@ -12,9 +12,7 @@ module Nagios3
     def send_noc
       perfdata, modems = get_from_database
       send_data(perfdata)
-      mark_data(perfdata)
       send_modems(modems)
-      mark_modems(modems)
       delete_old_data
     end
 
@@ -47,7 +45,7 @@ module Nagios3
 
     def perfdata_sql(hash)
       str = <<-SQL
-        insert into host_service_perfdata values (DEFAULT, '#{Time.at(hash[:time].to_i)}',#{hash[:host_id] || "NULL"},
+        insert into host_service_perfdata values (DEFAULT, #{hash[:time].to_i},#{hash[:host_id] || "NULL"},
         '#{hash[:host]}','#{hash[:service]}','#{hash[:status]}','#{hash[:duration]}','#{hash[:execution_time]}',
         '#{hash[:latency]}','#{hash[:output]}','#{hash[:perfdata]}','#{DateTime.now.strftime("%Y-%m-%d %H:%M:%S")}', null)
 SQL
@@ -55,7 +53,7 @@ SQL
 
     def modem_sql(hash)
       str = <<-SQL
-        insert into modem_service_perfdata values (DEFAULT, '#{Time.at(hash[:time].to_i)}',#{hash[:host_id] || "NULL"},
+        insert into modem_service_perfdata values (DEFAULT, #{hash[:time]},#{hash[:host_id] || "NULL"},
         '#{hash[:host]}','#{hash[:service]}','#{hash[:status]}','#{hash[:duration]}','#{hash[:execution_time]}',
         '#{hash[:latency]}','#{hash[:output]}','#{hash[:perfdata]}','#{DateTime.now.strftime("%Y-%m-%d %H:%M:%S")}', null)
 SQL
@@ -80,7 +78,7 @@ SQL
       rows = tbl.split("\n")[2..-2]
       columns = tbl.split("\n")[0].split("|").each{|c|c.strip!}
       columns[columns.index("id")] = "table_id"
-      columns[columns.index("host_id")] = "id"
+      columns[columns.index("service")] = "id"
       result = []
       rows.each do |r|
         row = {}
@@ -88,6 +86,7 @@ SQL
           row[columns[i].to_sym] = v.strip
         end
         if r =~ /[\w\d]+/
+          row[:time] = DateTime.strptime(row[:time],"%Y-%m-%d %H:%M:%S").to_i
           result << row
         end
       end
@@ -97,7 +96,7 @@ SQL
     def mark_data(perfdata)
       if perfdata.count > 0
         ids = perfdata.inject([]){|sum, h| sum << h[:table_id]}.to_s.gsub!(/[\[\]]/,"")
-        sql = "update host_service_perfdata set sent_at = ''#{DateTime.now.strftime("%Y-%m-%d %H:%M:%S")}' where id in (#{ids})"
+        sql = "update host_service_perfdata set sent_at = '#{DateTime.now.strftime("%Y-%m-%d %H:%M:%S")}' where id in (#{ids})"
         run_sql(sql)
       end
     end
@@ -105,12 +104,13 @@ SQL
     def mark_modems(modems)
       if modems.count > 0
         ids = modems.inject([]){|sum, h| sum << h[:table_id]}.to_s.gsub!(/[\[\]]/,"")
-        sql = "update modem_service_perfdata set sent_at = ''#{DateTime.now.strftime("%Y-%m-%d %H:%M:%S")}' where id in (#{ids})"
+        sql = "update modem_service_perfdata set sent_at = '#{DateTime.now.strftime("%Y-%m-%d %H:%M:%S")}' where id in (#{ids})"
         run_sql(sql)
       end
     end
 
     def send_data(perfdata)
+      perfdata.uniq!{|row| row[:table_id]}
       perfdata.in_groups_of(50, false) do |batch|
         push_request(Nagios3.service_perfdata_url, batch.to_json)
         mark_data(perfdata)
@@ -118,6 +118,7 @@ SQL
     end
 
     def send_modems(modems)
+      modems.uniq!{|row| row[:table_id]}
       modems.in_groups_of(100, false) do |batch|
         push_request(Nagios3.modem_service_perfdata_url, batch.to_json)
         mark_modems(modems)
@@ -156,7 +157,7 @@ SQL
 
     def run_sql(sql)
       sql.gsub!("\n", " ")
-      `/usr/local/pgsql/bin/psql probe_production ccisystems -c '#{sql}'`
+      `/usr/local/pgsql/bin/psql probe_production ccisystems -c "#{sql}"`
     end
   end
 

@@ -48,14 +48,14 @@ module Nagios3
 
     def perfdata_sql(hash)
       str = <<-SQL
-        insert into host_perfdata values (DEFAULT, '#{Time.at(hash[:time].to_i)}','#{hash[:id]}','#{hash[:host_name]}','#{hash[:status]}',
+        insert into host_perfdata values (DEFAULT, #{hash[:time]},'#{hash[:id]}','#{hash[:host_name]}','#{hash[:status]}',
         #{hash[:duration]},'#{hash[:execution_time]}','#{hash[:latency]}','#{hash[:output]}','#{hash[:perfdata]}','#{DateTime.now.strftime("%Y-%m-%d %H:%M:%S")}')
 SQL
     end
 
     def modem_sql(hash)
       str = <<-SQL
-        insert into modem_perfdata values (DEFAULT, '#{Time.at(hash[:time].to_i)}','#{hash[:host_name]}','#{hash[:status]}',
+        insert into modem_perfdata values (DEFAULT, #{hash[:time]},'#{hash[:host_name]}','#{hash[:status]}',
         #{hash[:duration]},'#{hash[:execution_time]}','#{hash[:latency]}','#{hash[:output]}','#{hash[:perfdata]}','#{DateTime.now.strftime("%Y-%m-%d %H:%M:%S")}')
 SQL
 
@@ -97,6 +97,7 @@ SQL
     end
 
     def send_data(perfdata)
+      perfdata.uniq!{|row|row[:table_id]}
       perfdata.in_groups_of(50, false) do |batch|
         push_request(Nagios3.host_perfdata_url, batch.to_json)
         mark_hosts(batch)
@@ -122,6 +123,7 @@ SQL
     end
 
     def send_modems(modems)
+      modems.uniq!{|row|row[:table_id]}
       modems.in_groups_of(50, false) do |batch|
         push_request(Nagios3.modem_host_perfdata_url, batch.to_json)
         mark_modems(batch)
